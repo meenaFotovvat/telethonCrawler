@@ -1,3 +1,4 @@
+import traceback
 import json
 import logging
 from fastapi import FastAPI, HTTPException
@@ -20,7 +21,7 @@ async def read_root():
 # Access environment variables
 API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
-phone_number = os.getenv("PHONE_NUMBER")  # Store phone number in .env for security
+phone_number = os.getenv("PHONE_NUMBER")
 
 # Initialize the Telethon client
 client = TelegramClient('bookNook', API_ID, API_HASH)
@@ -30,11 +31,9 @@ async def scrape_telegram_channels(channels):
     all_data = {}
     for channel in channels:
         try:
-            # Fetch channel entity
             logging.info(f"Fetching entity for channel: {channel}")
             channel_entity = await client.get_entity(channel)
 
-            # Get message history from the channel
             logging.info(f"Fetching message history for channel: {channel}")
             messages = await client(GetHistoryRequest(
                 peer=channel_entity,
@@ -57,12 +56,13 @@ async def scrape_telegram_channels(channels):
                     'sender_id': message.from_id.user_id if message.from_id else None
                 })
 
-            # Save data for the current channel
             all_data[channel] = data
             logging.info(f"Scraping completed for channel: {channel}")
 
         except Exception as e:
             logging.error(f"Failed to scrape channel {channel}: {e}")
+            traceback_str = ''.join(traceback.format_exception(None, e, e.__traceback__))
+            logging.error(f"Full traceback for scraping error in {channel}: {traceback_str}")
             raise HTTPException(status_code=500, detail=f"Error scraping channel {channel}: {e}")
 
     return all_data
@@ -82,5 +82,6 @@ async def fetch_telegram_data():
             await client.disconnect()
             raise HTTPException(status_code=401, detail="Unauthorized access to Telegram API.")
     except Exception as e:
-        logging.error(f"Error in fetch_telegram_data: {e}")
+        traceback_str = ''.join(traceback.format_exception(None, e, e.__traceback__))
+        logging.error(f"Error in fetch_telegram_data: {traceback_str}")
         raise HTTPException(status_code=500, detail="Failed to fetch telegram data.")
