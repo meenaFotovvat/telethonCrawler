@@ -1,4 +1,3 @@
-import traceback
 import json
 import logging
 from fastapi import FastAPI, HTTPException
@@ -23,8 +22,8 @@ API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
 phone_number = os.getenv("PHONE_NUMBER")
 
-# Initialize the Telethon client
-client = TelegramClient('bookNook', API_ID, API_HASH)
+# Initialize the Telethon client with a session file
+client = TelegramClient('bookNook_session', API_ID, API_HASH)
 
 # Define the Telegram scraping function
 async def scrape_telegram_channels(channels):
@@ -40,13 +39,12 @@ async def scrape_telegram_channels(channels):
                 offset_id=0,
                 offset_date=None,
                 add_offset=0,
-                limit=100,
+                limit=50,
                 max_id=0,
                 min_id=0,
                 hash=0
             ))
 
-            # Process each message
             data = []
             for message in messages.messages:
                 data.append({
@@ -61,19 +59,17 @@ async def scrape_telegram_channels(channels):
 
         except Exception as e:
             logging.error(f"Failed to scrape channel {channel}: {e}")
-            traceback_str = ''.join(traceback.format_exception(None, e, e.__traceback__))
-            logging.error(f"Full traceback for scraping error in {channel}: {traceback_str}")
             raise HTTPException(status_code=500, detail=f"Error scraping channel {channel}: {e}")
 
     return all_data
 
-# Define the FastAPI route that Metis will call
 @app.get("/fetch_telegram_data")
 async def fetch_telegram_data():
     channels = ['@chiro_chanel', '@Tajrobeh_home', '@Khaneh_Agahi1']
     
     try:
         await client.start(phone_number)
+        
         if await client.is_user_authorized():
             data = await scrape_telegram_channels(channels)
             await client.disconnect()
@@ -81,7 +77,10 @@ async def fetch_telegram_data():
         else:
             await client.disconnect()
             raise HTTPException(status_code=401, detail="Unauthorized access to Telegram API.")
+    
+    except SessionPasswordNeededError:
+        await client.disconnect()
+        raise HTTPException(status_code=403, detail="Two-factor authentication is required for this account.")
     except Exception as e:
-        traceback_str = ''.join(traceback.format_exception(None, e, e.__traceback__))
-        logging.error(f"Error in fetch_telegram_data: {traceback_str}")
+        logging.error(f"Error in fetch_telegram_data: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch telegram data.")
