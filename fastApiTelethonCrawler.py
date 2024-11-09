@@ -6,6 +6,7 @@ from telethon.errors import SessionPasswordNeededError
 from telethon.tl.functions.messages import GetHistoryRequest
 from dotenv import load_dotenv
 import os
+from cryptography.fernet import Fernet
 
 logging.basicConfig(level=logging.INFO)
 
@@ -13,17 +14,59 @@ load_dotenv()  # Load environment variables from .env file
 
 app = FastAPI()
 
-@app.get("/")
-async def read_root():
-    return {"message": "App is working"}
-
 # Access environment variables
 API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
 phone_number = os.getenv("PHONE_NUMBER")
 
-# Initialize the Telethon client with a session file
-client = TelegramClient('bookNook_session', API_ID, API_HASH)
+# Generate encryption key if it doesn't exist
+if not os.path.exists("encryption_key.key"):
+    key = Fernet.generate_key()
+    with open("encryption_key.key", "wb") as key_file:
+        key_file.write(key)
+else:
+    # Load the existing encryption key
+    with open("encryption_key.key", "rb") as key_file:
+        key = key_file.read()
+
+# Initialize encryption key
+def load_key():
+    return key  # Use the key already loaded or generated
+
+# Encryption functions
+def decrypt_session_file(file_path, key):
+    fernet = Fernet(key)
+    with open(file_path, "rb") as encrypted_file:
+        encrypted_data = encrypted_file.read()
+    decrypted_data = fernet.decrypt(encrypted_data)
+    
+    decrypted_file_path = file_path.replace(".enc", "")
+    with open(decrypted_file_path, "wb") as decrypted_file:
+        decrypted_file.write(decrypted_data)
+    
+    return decrypted_file_path
+
+def encrypt_session_file(file_path, key):
+    fernet = Fernet(key)
+    with open(file_path, "rb") as decrypted_file:
+        original_data = decrypted_file.read()
+    
+    encrypted_data = fernet.encrypt(original_data)
+    encrypted_file_path = file_path + ".enc"
+    with open(encrypted_file_path, "wb") as encrypted_file:
+        encrypted_file.write(encrypted_data)
+    
+    return encrypted_file_path
+
+# Decrypt session file before using it in TelegramClient
+session_file_path = "bookNook_session.session.enc"
+if os.path.exists(session_file_path):
+    decrypted_session_file_path = decrypt_session_file(session_file_path, load_key())
+else:
+    decrypted_session_file_path = "bookNook_session.session"  # Start a new session if the file doesn't exist
+
+# Initialize the Telethon client with the decrypted session file
+client = TelegramClient(decrypted_session_file_path, API_ID, API_HASH)
 
 # Define the Telegram scraping function
 async def scrape_telegram_channels(channels):
@@ -73,6 +116,10 @@ async def fetch_telegram_data():
         if await client.is_user_authorized():
             data = await scrape_telegram_channels(channels)
             await client.disconnect()
+
+            # Encrypt the session file again after disconnecting
+            encrypt_session_file(decrypted_session_file_path, load_key())
+            os.remove(decrypted_session_file_path)  # Clean up the decrypted session file
             return data
         else:
             await client.disconnect()
