@@ -1,4 +1,5 @@
+telethon
+cryptography
 fastapi
 uvicorn
-telethon
 python-dotenv
