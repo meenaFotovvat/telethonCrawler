@@ -1,47 +1,35 @@
-import base64
-import os
+import json
 import logging
 from fastapi import FastAPI, HTTPException
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 from telethon.tl.functions.messages import GetHistoryRequest
-from cryptography.fernet import Fernet
 from dotenv import load_dotenv
-from io import BytesIO
+import os
 
 logging.basicConfig(level=logging.INFO)
+
 load_dotenv()  # Load environment variables from .env file
 
 app = FastAPI()
+
+@app.get("/")
+async def read_root():
+    return {"message": "App is working"}
 
 # Access environment variables
 API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
 phone_number = os.getenv("PHONE_NUMBER")
-encryption_key_b64 = os.getenv("ENCRYPTION_KEY")  # Base64-encoded encryption key
-
-# Decode Base64 encryption key
-encryption_key = base64.b64decode(encryption_key_b64)
 
 # Define path to the session file on the mounted disk
 disk_mount_path = "/var/lib/data/booknook"  # Change this if your Disk is mounted elsewhere
-encrypted_session_file_path = os.path.join(disk_mount_path, "bookNook_session.session.enc")
+encrypted_session_file_path = os.path.join(disk_mount_path, "bookNook_session.session")
 
-# Decrypt session file from the mounted Disk
-def decrypt_session_file(file_path, key):
-    fernet = Fernet(key)
-    with open(file_path, "rb") as encrypted_file:
-        encrypted_data = encrypted_file.read()
-    decrypted_data = fernet.decrypt(encrypted_data)
-    return BytesIO(decrypted_data)  # Return a file-like object for Telethon to use
+# Initialize the Telethon client with a session file
+client = TelegramClient('bookNook_session', API_ID, API_HASH)
 
-# Initialize the decrypted session file content as a BytesIO stream
-session_file_stream = decrypt_session_file(encrypted_session_file_path, encryption_key)
-
-# Initialize the Telethon client using the decrypted session content
-client = TelegramClient(session_file_stream, API_ID, API_HASH)
-
-# Define the Telegram scraping function (same as before)
+# Define the Telegram scraping function
 async def scrape_telegram_channels(channels):
     all_data = {}
     for channel in channels:
